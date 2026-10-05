@@ -1,5 +1,7 @@
 # DocuMind
 
+[![CI](https://github.com/dtgdheerajkashyap-droid/documind/actions/workflows/ci.yml/badge.svg)](https://github.com/dtgdheerajkashyap-droid/documind/actions/workflows/ci.yml)
+
 **Ask questions about your PDFs and get answers grounded in, and cited from, your own documents.**
 
 DocuMind is a full-stack retrieval-augmented generation (RAG) app. You upload PDFs; it extracts,
