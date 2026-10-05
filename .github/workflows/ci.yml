@@ -43,7 +43,7 @@ jobs:
       - name: Ruff
         run: ruff check . ../scripts
       - name: Black
-        run: black --check . ../scripts
+        run: black --config pyproject.toml --check . ../scripts
       - name: Alembic migrations (upgrade, downgrade, upgrade)
         run: |
           alembic upgrade head
