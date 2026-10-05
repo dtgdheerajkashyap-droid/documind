@@ -376,6 +376,7 @@ labelled questions in [`scripts/eval/dataset.json`](scripts/eval/dataset.json), 
 cd backend
 .venv/Scripts/python ../scripts/evaluate.py            # Windows (macOS/Linux: .venv/bin/python)
 .venv/Scripts/python ../scripts/evaluate.py --judge    # + end-to-end answers and LLM-as-judge (needs an API key)
+.venv/Scripts/python ../scripts/evaluate.py --judge --judge-model gemini-3.1-flash-lite   # grade with a different model
 .venv/Scripts/python ../scripts/evaluate.py --chunk-size 200 --chunk-overlap 40 --output ../docs/evaluation_results_chunk200.md
 ```
 
@@ -400,13 +401,13 @@ Dataset: 2 PDFs, 9 pages, 18 answerable and 5 unanswerable questions. Embeddings
 | Unanswerable refused by threshold alone | 3/5 | 3/5 |
 | Answerable wrongly refused by threshold | 0/18 | 0/18 |
 
-**End-to-end with the LLM** (`--judge`, default chunks, `gemini-flash-latest` answering and judging):
+**End-to-end with the LLM** (`--judge`, default chunks, answers by `gemini-flash-latest`):
 
-| Metric | Value |
-|---|---|
-| Mean LLM-judge score (1–5) | 4.89 (n = 18; sixteen 5s, two 4s) |
-| Unanswerable questions refused (threshold + grounding prompt) | 5/5 |
-| Answerable questions wrongly refused | 0/18 |
+| Metric | Self-judged (`gemini-flash-latest`) | Independent judge (`gemini-3.1-flash-lite`) |
+|---|---|---|
+| Mean LLM-judge score (1–5) | 4.89 (sixteen 5s, two 4s) | 4.83 (fifteen 5s, three 4s) |
+| Unanswerable questions refused (threshold + grounding prompt) | 5/5 | 5/5 |
+| Answerable questions wrongly refused | 0/18 | 0/18 |
 
 The full per-question tables are in [`docs/evaluation_results.md`](docs/evaluation_results.md) and
 [`docs/evaluation_results_chunk200.md`](docs/evaluation_results_chunk200.md).
@@ -421,8 +422,9 @@ The full per-question tables are in [`docs/evaluation_results.md`](docs/evaluati
   the documents can't answer: "Northwind's stock price" scored 0.56 and "Atlas-7 price" scored 0.68.
   That is exactly why the grounding prompt exists as a second gate, and the `--judge` run shows it
   working: the LLM refused both, bringing end-to-end refusals to 5/5.
-- The judge is the same model that wrote the answers, so the 4.89 may be biased upward
-  (self-preference). A stronger setup would use a different judge model or human labels.
+- LLM judges tend to favour their own outputs, so the run was repeated with a different judge
+  model: 4.83 vs 4.89, so self-preference had little effect here. Human labels would still be the
+  gold standard. `docs/evaluation_results.md` holds the independent-judge run.
 - The lowest-scoring answerable question scored 0.308, close to the 0.3 threshold. Raising the
   threshold would trade false refusals for fewer LLM calls.
 

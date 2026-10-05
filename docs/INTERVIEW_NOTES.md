@@ -183,8 +183,9 @@ refusal: include unanswerable questions and count correct refusals and false ref
 generation: LLM-as-judge comparing answers to reference answers on a 1–5 scale (the `--judge`
 flag). On the small sample set retrieval was 100% at k=1, which mostly shows the set is easy, so I
 treat the script as a regression harness, not a benchmark. The live `--judge` run scored 4.89/5
-and refused 5/5 unanswerable questions, but since the judge is the same model that answered, I'd
-use a different judge model for anything serious.
+when Flash graded its own answers. Because LLM judges favour their own outputs, I re-ran it with a
+different judge (`--judge-model gemini-3.1-flash-lite`): 4.83/5, so the bias was small here. Both
+runs refused 5/5 unanswerable questions.
 
 **Bonus: How do you handle an unreliable LLM API?**
 Free-tier Gemini often returns 503 "high demand" or 429. The provider retries transient errors with
@@ -205,6 +206,14 @@ store (pgvector with HNSW, Qdrant, or managed Pinecone) with tenant filtering; r
 replicas behind a load balancer, with Redis for rate limiting and caching; batch embeddings, maybe
 on a GPU; cache answers for repeated questions; and add observability (latency per stage,
 retrieval scores, refusal rate, token usage).
+
+**Bonus: What did you change before deploying it publicly?**
+A review for "what breaks or gets abused when strangers use it" found: (1) no isolation between
+users, fixed with anonymous per-browser workspaces scoping documents, vectors, and chats; (2) the
+upload size check ran after FastAPI had already spooled the body to disk, fixed with a streaming
+body-size middleware; (3) a rate limiter that trusted the forgeable `X-Forwarded-For` header; (4)
+free hosts wiping the disk on restart. For that last one I made Postgres the source of truth and
+rebuild the Chroma index from stored chunk text on startup. Each fix has a test.
 
 **15. What did you do about security and robustness?**
 Uploads are validated by extension, content type, and magic bytes, size-limited while streaming,
