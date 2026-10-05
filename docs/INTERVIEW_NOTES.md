@@ -182,7 +182,16 @@ k?) and **MRR** (how high was the first correct source?), using labelled (file, 
 refusal: include unanswerable questions and count correct refusals and false refusals. For
 generation: LLM-as-judge comparing answers to reference answers on a 1–5 scale (the `--judge`
 flag). On the small sample set retrieval was 100% at k=1, which mostly shows the set is easy, so I
-treat the script as a regression harness, not a benchmark.
+treat the script as a regression harness, not a benchmark. The live `--judge` run scored 4.89/5
+and refused 5/5 unanswerable questions, but since the judge is the same model that answered, I'd
+use a different judge model for anything serious.
+
+**Bonus: How do you handle an unreliable LLM API?**
+Free-tier Gemini often returns 503 "high demand" or 429. The provider retries transient errors with
+exponential backoff, then falls back to a configured list of models (Flash → Flash-Lite). Bad
+requests (400) fail fast. For streaming, a retry is only safe before the first token reaches the
+user, so the first chunk is read inside the retry loop. Model names use `-latest` aliases because
+Google retires versions; `gemini-2.5-flash` disappeared for new keys during development.
 
 **13. What are the main weaknesses, and how would you fix them?**
 (a) Pure dense retrieval can miss exact identifiers: add hybrid BM25 + vector search and a

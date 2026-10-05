@@ -25,6 +25,7 @@ def build_llm(settings: Settings) -> LLMProvider:
     return GeminiProvider(
         settings.gemini_api_key,
         settings.gemini_model,
+        fallback_models=settings.gemini_fallback_model_list,
         temperature=settings.llm_temperature,
         max_output_tokens=settings.llm_max_output_tokens,
         thinking_budget=settings.gemini_thinking_budget,

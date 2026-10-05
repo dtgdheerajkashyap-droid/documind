@@ -46,8 +46,10 @@ class Settings(BaseSettings):
     # --- LLM ---------------------------------------------------------------
     llm_provider: Literal["gemini", "ollama"] = "gemini"
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"
-    gemini_thinking_budget: int | None = 0
+    gemini_model: str = "gemini-flash-latest"
+    # Comma-separated models tried in order when the primary one is overloaded.
+    gemini_fallback_models: str = "gemini-flash-lite-latest"
+    gemini_thinking_budget: int | None = None
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"
     llm_temperature: float = Field(default=0.1, ge=0.0, le=2.0)
@@ -76,6 +78,10 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         """CORS_ORIGINS is a comma-separated list (e.g. "http://a.com,http://b.com")."""
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def gemini_fallback_model_list(self) -> list[str]:
+        return [m.strip() for m in self.gemini_fallback_models.split(",") if m.strip()]
 
     @property
     def max_upload_bytes(self) -> int:

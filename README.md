@@ -11,7 +11,7 @@ passage). If the documents don't contain the answer, it says
 - **Backend:** Python 3.11 · FastAPI · Pydantic v2 · SQLAlchemy 2.0 · Alembic · PostgreSQL
 - **RAG:** PyMuPDF · sentence-transformers `all-MiniLM-L6-v2` (local) · ChromaDB · Google Gemini (swappable with Ollama)
 - **Frontend:** Next.js 16 (App Router) · TypeScript · Tailwind CSS 4
-- **Quality:** 69 pytest tests · 23 Vitest tests · ruff · black · ESLint · Prettier · GitHub Actions · Docker Compose
+- **Quality:** 77 pytest tests · 23 Vitest tests · ruff · black · ESLint · Prettier · GitHub Actions · Docker Compose
 
 ---
 
@@ -238,8 +238,9 @@ All settings are environment variables (read by `pydantic-settings`, optionally 
 |---|---|---|
 | `LLM_PROVIDER` | `gemini` | `gemini` or `ollama`, the one switch for the LLM backend |
 | `GEMINI_API_KEY` | *(empty)* | Required for chat with Gemini |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Any Gemini model id |
-| `GEMINI_THINKING_BUDGET` | `0` | `0` disables "thinking" on 2.5 Flash (faster); empty = model default |
+| `GEMINI_MODEL` | `gemini-flash-latest` | Any Gemini model id; the `-latest` alias survives Google retiring versions |
+| `GEMINI_FALLBACK_MODELS` | `gemini-flash-lite-latest` | Comma-separated models tried in order when the primary is overloaded (503) or rate limited (429) |
+| `GEMINI_THINKING_BUDGET` | *(empty)* | Optional thinking-token budget; empty = model default (newer models reject `0`) |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | `http://localhost:11434` / `llama3.1:8b` | Used when `LLM_PROVIDER=ollama` |
 | `LLM_TEMPERATURE` | `0.1` | Low for factual answers |
 | `LLM_MAX_OUTPUT_TOKENS` | `1024` | Answer length cap |
@@ -310,7 +311,7 @@ structured request log line.
 
 ```bash
 # Backend (from backend/)
-pytest                                        # 69 tests, SQLite + temporary Chroma, offline
+pytest                                        # 77 tests, SQLite + temporary Chroma, offline
 TEST_DATABASE_URL=postgresql+psycopg://... pytest   # same suite against PostgreSQL
 ruff check . ../scripts && black --config pyproject.toml --check . ../scripts
 
@@ -329,6 +330,7 @@ npm run format:check && npm run typecheck && npm run build
 | `test_retrieval.py` | Ranking, top-k, document filter, low scores for unrelated queries, empty index |
 | `test_grounding.py` | Threshold refusal **without calling the LLM**, LLM refusal normalisation, citation numbering, prompt contents, follow-up rewriting with history, rewrite fallback, mid-stream LLM errors |
 | `test_api_*.py` | Upload validation (type, magic bytes, size, partial rejection), list/get/delete, SSE event sequence, session persistence, 404s, request validation, **missing `GEMINI_API_KEY` → 503 while the app still starts**, rate limiting, health, error format |
+| `test_gemini_provider.py` | Retry on 429/503, fallback to the next model, fail fast on 400, no retry after streaming has started |
 | `test_config.py` | Settings validation, rate limiter |
 
 Tests use a deterministic hashing "embedding" and a scripted fake LLM, so they need no network,
@@ -373,6 +375,14 @@ Dataset: 2 PDFs, 9 pages, 18 answerable and 5 unanswerable questions. Embeddings
 | Unanswerable refused by threshold alone | 3/5 | 3/5 |
 | Answerable wrongly refused by threshold | 0/18 | 0/18 |
 
+**End-to-end with the LLM** (`--judge`, default chunks, `gemini-flash-latest` answering and judging):
+
+| Metric | Value |
+|---|---|
+| Mean LLM-judge score (1–5) | 4.89 (n = 18; sixteen 5s, two 4s) |
+| Unanswerable questions refused (threshold + grounding prompt) | 5/5 |
+| Answerable questions wrongly refused | 0/18 |
+
 The full per-question tables are in [`docs/evaluation_results.md`](docs/evaluation_results.md) and
 [`docs/evaluation_results_chunk200.md`](docs/evaluation_results_chunk200.md).
 
@@ -384,8 +394,10 @@ The full per-question tables are in [`docs/evaluation_results.md`](docs/evaluati
   questions.
 - The threshold refuses off-topic questions (best scores 0.03–0.15) but **not** on-topic questions
   the documents can't answer: "Northwind's stock price" scored 0.56 and "Atlas-7 price" scored 0.68.
-  That is exactly why the grounding prompt exists as a second gate. Its effect only shows up in
-  the `--judge` run, which needs an API key, so no LLM numbers are reported here.
+  That is exactly why the grounding prompt exists as a second gate, and the `--judge` run shows it
+  working: the LLM refused both, bringing end-to-end refusals to 5/5.
+- The judge is the same model that wrote the answers, so the 4.89 may be biased upward
+  (self-preference). A stronger setup would use a different judge model or human labels.
 - The lowest-scoring answerable question scored 0.308, close to the 0.3 threshold. Raising the
   threshold would trade false refusals for fewer LLM calls.
 
@@ -411,7 +423,9 @@ The full per-question tables are in [`docs/evaluation_results.md`](docs/evaluati
 
 - **No authentication:** single-user, local-first app. All documents are searchable by everyone
   who can reach the API.
-- Default model `gemini-2.5-flash` with thinking disabled, for latency on the free tier.
+- Default model `gemini-flash-latest` with `gemini-flash-lite-latest` as fallback. Transient
+  Gemini errors (429/503) are retried with exponential backoff, and streaming only retries before
+  the first token, so users never see duplicated text.
 - Up to 20 files per upload request.
 - "Document filter empty" means search all ready documents.
 - History for rewriting is the last `HISTORY_TURNS` × 2 messages. The answer prompt uses the
@@ -430,10 +444,10 @@ The full per-question tables are in [`docs/evaluation_results.md`](docs/evaluati
 - Retrieval is pure dense vector search: exact identifiers ("E450") rely on the embedding model
   rather than keyword matching.
 - The evaluation set is small and synthetic.
-- **Not verified locally in this environment:** `docker compose up` (Docker was unavailable on the
-  build machine) and live Gemini calls (no API key). Both Docker images are built in CI. The Gemini
-  provider follows the `google-genai` SDK API, and the code paths around it are exercised with a
-  fake LLM and with the Ollama provider.
+- **Not verified locally:** `docker compose up` (Docker was unavailable on the build machine).
+  Both Docker images are built in CI instead.
+- Free-tier Gemini capacity varies: during development every Flash model briefly returned 503
+  "high demand", which is why the provider retries and falls back to a Lite model.
 
 ## Future improvements
 
