@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pymupdf
 
-OUT_DIR = Path(__file__).parent / "eval" / "sample_docs"
+OUT_DIR = Path(__file__).resolve().parent.parent / "backend" / "sample_docs"
 
 HANDBOOK = [
     (

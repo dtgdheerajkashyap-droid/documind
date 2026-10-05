@@ -1,4 +1,5 @@
 import { createSSEParser } from "@/lib/sse";
+import { workspaceHeaders } from "@/lib/workspace";
 import type {
   ChatRequest,
   Citation,
@@ -39,16 +40,19 @@ async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(`Request failed with status ${response.status}`, response.status);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+const UNREACHABLE_MESSAGE =
+  "Cannot reach the DocuMind API. If it was idle, the free server may be waking up: " +
+  "please try again in about a minute.";
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${path}`, init);
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers: { ...workspaceHeaders(), ...(init.headers as Record<string, string>) },
+    });
   } catch {
-    throw new ApiError(
-      `Cannot reach the DocuMind API at ${API_URL}. Is the backend running?`,
-      0,
-      "network_error",
-    );
+    throw new ApiError(UNREACHABLE_MESSAGE, 0, "network_error");
   }
   if (!response.ok) throw await toApiError(response);
   if (response.status === 204) return undefined as T;
@@ -66,6 +70,7 @@ export const api = {
     files.forEach((file) => form.append("files", file));
     return request<UploadResponse>("/api/documents", { method: "POST", body: form });
   },
+  addSampleDocuments: () => request<UploadResponse>("/api/documents/samples", { method: "POST" }),
 
   listSessions: () => request<SessionSummary[]>("/api/sessions"),
   getSession: (id: string) => request<SessionDetail>(`/api/sessions/${id}`),
@@ -95,17 +100,17 @@ export async function streamChat(
   try {
     response = await fetch(`${API_URL}/api/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      headers: {
+        ...workspaceHeaders(),
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
       body: JSON.stringify(body),
       signal,
     });
   } catch (error) {
     if ((error as Error).name === "AbortError") throw error;
-    throw new ApiError(
-      `Cannot reach the DocuMind API at ${API_URL}. Is the backend running?`,
-      0,
-      "network_error",
-    );
+    throw new ApiError(UNREACHABLE_MESSAGE, 0, "network_error");
   }
   if (!response.ok) throw await toApiError(response);
   if (!response.body) throw new ApiError("Streaming is not supported by this browser.", 0);

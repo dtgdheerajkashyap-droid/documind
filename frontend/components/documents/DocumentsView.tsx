@@ -1,14 +1,15 @@
 "use client";
 
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, Lock } from "lucide-react";
 
 import { DocumentList } from "@/components/documents/DocumentList";
+import { SampleDocsButton } from "@/components/documents/SampleDocsButton";
 import { UploadDropzone } from "@/components/documents/UploadDropzone";
 import { EmptyState, ErrorBanner, Spinner } from "@/components/ui/Feedback";
 import { useDocuments } from "@/hooks/useDocuments";
 
 export function DocumentsView() {
-  const { documents, loading, error, setError, upload, remove } = useDocuments();
+  const { documents, loading, error, setError, upload, addSamples, remove } = useDocuments();
   const ready = documents.filter((d) => d.status === "ready").length;
 
   return (
@@ -17,6 +18,10 @@ export function DocumentsView() {
         <h1 className="text-2xl font-semibold tracking-tight">Documents</h1>
         <p className="text-muted mt-1 text-sm">
           Upload PDFs to build your knowledge base. DocuMind answers only from these files.
+        </p>
+        <p className="text-muted mt-2 flex items-center gap-1.5 text-xs">
+          <Lock className="size-3.5" aria-hidden />
+          Your documents and chats are private to this browser. No account needed.
         </p>
       </div>
 
@@ -47,8 +52,13 @@ export function DocumentsView() {
         ) : documents.length === 0 ? (
           !error && (
             <EmptyState icon={<FolderOpen className="size-6" />} title="No documents yet">
-              Upload a PDF above. It will be split into passages, embedded, and indexed so you can
-              ask questions about it.
+              <p>
+                Upload a PDF above. It will be split into passages, embedded, and indexed so you can
+                ask questions about it. No PDF handy? Load two short sample documents.
+              </p>
+              <div className="mt-4">
+                <SampleDocsButton onAdd={addSamples} variant="primary" />
+              </div>
             </EmptyState>
           )
         ) : (

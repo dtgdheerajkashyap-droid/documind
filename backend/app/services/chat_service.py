@@ -80,12 +80,13 @@ class ChatService:
         self.retriever = retriever
         self.llm = llm
 
-    def validate(self, request: ChatRequest) -> None:
+    def validate(self, request: ChatRequest, workspace_id: uuid.UUID) -> None:
         """Checks that must fail *before* the stream starts (so they return a JSON error)."""
         self.llm.ensure_configured()
         if request.session_id is not None:
             with session_scope(self.session_factory) as session:
-                if ChatRepository(session).get_session(request.session_id) is None:
+                repo = ChatRepository(session)
+                if repo.get_session(request.session_id, workspace_id) is None:
                     raise NotFoundError("Chat session not found.")
 
     async def rewrite_query(self, question: str, history: list[tuple[str, str]]) -> str:
@@ -101,10 +102,12 @@ class ChatService:
             return question
         return clean_rewritten_query(raw, fallback=question)
 
-    async def stream(self, request: ChatRequest) -> AsyncIterator[ChatEvent]:
+    async def stream(
+        self, request: ChatRequest, workspace_id: uuid.UUID
+    ) -> AsyncIterator[ChatEvent]:
         started = time.perf_counter()
         try:
-            session_id, history = self._open_session(request)
+            session_id, history = self._open_session(request, workspace_id)
             standalone = await self.rewrite_query(request.question, history)
             with session_scope(self.session_factory) as session:
                 ChatRepository(session).add_message(
@@ -115,7 +118,7 @@ class ChatService:
                 )
             yield ChatEvent("meta", {"session_id": str(session_id), "standalone_query": standalone})
 
-            chunks = await self._retrieve(standalone, request)
+            chunks = await self._retrieve(standalone, request, workspace_id)
             best = chunks[0].score if chunks else None
             grounded = best is not None and best >= self.settings.retrieval_min_score
 
@@ -173,7 +176,9 @@ class ChatService:
                 "error", {"code": "internal_error", "message": "An unexpected error occurred."}
             )
 
-    def _open_session(self, request: ChatRequest) -> tuple[uuid.UUID, list[tuple[str, str]]]:
+    def _open_session(
+        self, request: ChatRequest, workspace_id: uuid.UUID
+    ) -> tuple[uuid.UUID, list[tuple[str, str]]]:
         """Load (or create) the chat session and the recent turns used for query rewriting."""
         with session_scope(self.session_factory) as session:
             repo = ChatRepository(session)
@@ -183,22 +188,26 @@ class ChatService:
                     if len(request.question) <= 80
                     else request.question[:77] + "..."
                 )
-                return repo.create_session(title).id, []
-            chat = repo.get_session(request.session_id)
+                return repo.create_session(title, workspace_id).id, []
+            chat = repo.get_session(request.session_id, workspace_id)
             if chat is None:
                 raise NotFoundError("Chat session not found.")
             recent = repo.recent_messages(chat.id, limit=self.settings.history_turns * 2)
             return chat.id, [(m.role.value, m.content) for m in recent]
 
-    async def _retrieve(self, query: str, request: ChatRequest) -> list[RetrievedChunk]:
+    async def _retrieve(
+        self, query: str, request: ChatRequest, workspace_id: uuid.UUID
+    ) -> list[RetrievedChunk]:
         document_ids: list[str] | None = None
         if request.document_ids:
             with session_scope(self.session_factory) as session:
-                ready = DocumentRepository(session).ready_ids(request.document_ids)
+                ready = DocumentRepository(session).ready_ids(workspace_id, request.document_ids)
             if not ready:
                 return []
             document_ids = [str(d) for d in ready]
         top_k = request.top_k or self.settings.retrieval_top_k
         return await anyio.to_thread.run_sync(
-            lambda: self.retriever.retrieve(query, top_k=top_k, document_ids=document_ids)
+            lambda: self.retriever.retrieve(
+                query, top_k=top_k, document_ids=document_ids, workspace_id=str(workspace_id)
+            )
         )

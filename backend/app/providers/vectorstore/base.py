@@ -29,15 +29,25 @@ class VectorStore(ABC):
 
     @abstractmethod
     def query(
-        self, embedding: list[float], top_k: int, document_ids: list[str] | None = None
+        self,
+        embedding: list[float],
+        top_k: int,
+        *,
+        workspace_id: str | None = None,
+        document_ids: list[str] | None = None,
     ) -> list[VectorMatch]:
-        """Return the `top_k` nearest records, optionally restricted to some documents."""
+        """Return the `top_k` nearest records, optionally restricted to a workspace and/or
+        specific documents."""
 
     @abstractmethod
     def delete_document(self, document_id: str) -> None: ...
 
     @abstractmethod
     def count(self) -> int: ...
+
+    @abstractmethod
+    def count_document(self, document_id: str) -> int:
+        """Number of vectors stored for one document."""
 
     def healthcheck(self) -> bool:
         try:

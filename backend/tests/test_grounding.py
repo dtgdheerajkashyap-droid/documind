@@ -8,8 +8,7 @@ import pytest
 from app.core.config import REFUSAL_MESSAGE
 from app.core.container import AppContainer
 from app.core.errors import LLMProviderError
-from app.db.session import session_scope
-from app.repositories.document_repository import DocumentRepository
+from app.core.workspace import DEFAULT_WORKSPACE_ID
 from app.schemas.chat import ChatRequest
 from app.services.chat_service import ChatEvent, build_citations
 from app.services.prompts import (
@@ -20,21 +19,14 @@ from app.services.prompts import (
     is_refusal,
 )
 from app.services.retrieval import RetrievedChunk
+from tests.conftest import ingest_document
 from tests.fakes import FakeLLM
-
-
-def _ingest(container: AppContainer, path: Path) -> None:
-    with session_scope(container.session_factory) as session:
-        doc = DocumentRepository(session).create(
-            filename=path.name, storage_path=str(path), file_size=path.stat().st_size
-        )
-    container.ingestion.ingest(doc.id)
 
 
 def _run(container: AppContainer, question: str, **kwargs) -> list[ChatEvent]:
     async def collect() -> list[ChatEvent]:
         request = ChatRequest(question=question, **kwargs)
-        return [e async for e in container.chat_service.stream(request)]
+        return [e async for e in container.chat_service.stream(request, DEFAULT_WORKSPACE_ID)]
 
     return asyncio.run(collect())
 
@@ -102,7 +94,7 @@ def test_clean_rewritten_query() -> None:
 def test_refuses_without_calling_llm_when_retrieval_is_weak(
     container: AppContainer, fake_llm: FakeLLM, sample_pdf: Path
 ) -> None:
-    _ingest(container, sample_pdf)
+    ingest_document(container, sample_pdf)
 
     events = _run(container, "Explain quantum chromodynamics gluon lattice theory")
 
@@ -123,7 +115,7 @@ def test_refuses_when_no_documents_exist(container: AppContainer, fake_llm: Fake
 def test_llm_refusal_is_normalised_and_has_no_citations(
     container: AppContainer, fake_llm: FakeLLM, sample_pdf: Path
 ) -> None:
-    _ingest(container, sample_pdf)
+    ingest_document(container, sample_pdf)
     fake_llm.responder = lambda prompt, system: "I couldn’t find this in your documents!"
 
     done = _answer(_run(container, "What is the refund policy for coffee bags?"))
@@ -135,7 +127,7 @@ def test_llm_refusal_is_normalised_and_has_no_citations(
 def test_grounded_answer_streams_tokens_and_cites_sources(
     container: AppContainer, fake_llm: FakeLLM, sample_pdf: Path
 ) -> None:
-    _ingest(container, sample_pdf)
+    ingest_document(container, sample_pdf)
     fake_llm.responder = lambda prompt, system: "Unopened bags can be returned within 30 days [1]."
 
     events = _run(container, "What is the refund policy for unopened coffee bags?")
@@ -160,7 +152,7 @@ def test_grounded_answer_streams_tokens_and_cites_sources(
 def test_follow_up_question_is_rewritten_with_history(
     container: AppContainer, fake_llm: FakeLLM, sample_pdf: Path
 ) -> None:
-    _ingest(container, sample_pdf)
+    ingest_document(container, sample_pdf)
 
     def responder(prompt: str, system: str | None) -> str:
         if "FOLLOW-UP QUESTION" in prompt:
@@ -183,7 +175,7 @@ def test_follow_up_question_is_rewritten_with_history(
 def test_rewrite_failure_falls_back_to_original_question(
     container: AppContainer, fake_llm: FakeLLM, sample_pdf: Path
 ) -> None:
-    _ingest(container, sample_pdf)
+    ingest_document(container, sample_pdf)
     first = _answer(_run(container, "What is the refund policy?"))
 
     async def failing_generate(prompt: str, *, system: str | None = None) -> str:
@@ -199,7 +191,7 @@ def test_rewrite_failure_falls_back_to_original_question(
 def test_llm_error_mid_stream_emits_error_event(
     container: AppContainer, fake_llm: FakeLLM, sample_pdf: Path
 ) -> None:
-    _ingest(container, sample_pdf)
+    ingest_document(container, sample_pdf)
 
     async def broken_stream(prompt: str, *, system: str | None = None):
         yield "Partial"

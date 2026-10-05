@@ -1,18 +1,11 @@
 from pathlib import Path
 
 from app.core.container import AppContainer
-from app.db.session import session_scope
-from app.repositories.document_repository import DocumentRepository
-from tests.conftest import make_pdf
+from tests.conftest import ingest_document, make_pdf
 
 
 def _ingest(container: AppContainer, path: Path) -> str:
-    with session_scope(container.session_factory) as session:
-        doc = DocumentRepository(session).create(
-            filename=path.name, storage_path=str(path), file_size=path.stat().st_size
-        )
-    container.ingestion.ingest(doc.id)
-    return str(doc.id)
+    return str(ingest_document(container, path))
 
 
 def test_retrieves_most_relevant_chunk_first(container: AppContainer, sample_pdf: Path) -> None:

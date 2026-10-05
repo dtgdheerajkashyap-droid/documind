@@ -8,6 +8,7 @@ import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { CitationsPanel } from "@/components/chat/CitationsPanel";
 import { SessionSidebar } from "@/components/chat/SessionSidebar";
+import { SampleDocsButton } from "@/components/documents/SampleDocsButton";
 import { EmptyState, ErrorBanner, Spinner } from "@/components/ui/Feedback";
 import { useChat } from "@/hooks/useChat";
 import { useDocuments } from "@/hooks/useDocuments";
@@ -22,7 +23,7 @@ const SUGGESTIONS = [
 
 export function ChatView() {
   const chat = useChat();
-  const { documents, loading: docsLoading } = useDocuments();
+  const { documents, loading: docsLoading, addSamples } = useDocuments();
   const readyDocs = useMemo(() => documents.filter((d) => d.status === "ready"), [documents]);
 
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
@@ -165,15 +166,19 @@ export function ChatView() {
                 ) : readyDocs.length === 0 ? (
                   <div className="space-y-4">
                     <p>
-                      Upload at least one PDF to get started. Answers come only from your files.
+                      Upload a PDF, or try the app with two short sample documents (an employee
+                      handbook and a robot manual). Answers come only from your files.
                     </p>
-                    <Link
-                      href="/documents"
-                      className="bg-accent text-accent-fg hover:bg-accent-hover inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium"
-                    >
-                      <Upload className="size-4" aria-hidden />
-                      Upload documents
-                    </Link>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <SampleDocsButton onAdd={addSamples} variant="primary" />
+                      <Link
+                        href="/documents"
+                        className="border-border bg-surface hover:border-accent hover:text-accent inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium"
+                      >
+                        <Upload className="size-4" aria-hidden />
+                        Upload documents
+                      </Link>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-4">

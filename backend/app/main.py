@@ -15,6 +15,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app import __version__
 from app.api.routes import chat, documents, health, sessions
+from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import get_settings
 from app.core.container import AppContainer, build_container
 from app.core.errors import register_exception_handlers
@@ -63,11 +64,13 @@ class RequestLoggingMiddleware:
             )
 
 
-def _warm_up(container: AppContainer) -> None:
+def _startup_tasks(container: AppContainer) -> None:
+    """Load the embedding model, then recover from a previous crash/restart."""
     try:
         container.embedder.embed_query("warm-up")
     except Exception:
         logger.exception("Embedding model warm-up failed")
+    container.ingestion_queue.recover()
 
 
 def create_app(container: AppContainer | None = None) -> FastAPI:
@@ -83,14 +86,16 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
         logger.info(
             "DocuMind started", extra={"llm": c.llm.name, "embedding_model": c.embedder.model_name}
         )
-        # Load the embedding model in the background so the first upload/question is fast.
-        threading.Thread(target=_warm_up, args=(c,), daemon=True, name="embed-warmup").start()
+        # In the background, so the API is available immediately: warm up the embedding
+        # model, re-queue interrupted uploads and rebuild vectors lost on restart.
+        threading.Thread(target=_startup_tasks, args=(c,), daemon=True, name="startup").start()
         try:
             c.llm.ensure_configured()
         except Exception as exc:
             # Start anyway; the chat endpoint returns a clear error until this is fixed.
             logger.warning("LLM is not configured", extra={"error": str(exc)})
         yield
+        c.ingestion_queue.shutdown()
         c.engine.dispose()
 
     app = FastAPI(
@@ -101,9 +106,13 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
     )
     app.state.container = container
 
+    # Order matters: the last middleware added is the outermost. The body limit sits
+    # inside CORS so that its 413 responses still carry CORS headers.
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_request_bytes)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
+        allow_origin_regex=settings.cors_origin_regex,
         allow_credentials=False,
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["*"],

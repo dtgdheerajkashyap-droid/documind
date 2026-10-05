@@ -31,3 +31,6 @@ next-env.d.ts
 Thumbs.db
 .idea/
 .vscode/
+
+# Deployment secrets (never commit)
+deploy.env

@@ -54,6 +54,16 @@ export function useDocuments() {
     return response;
   }, []);
 
+  const addSamples = useCallback(async () => {
+    try {
+      const response = await api.addSampleDocuments();
+      setDocuments((current) => [...response.documents, ...current]);
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
+
   const remove = useCallback(
     async (id: string) => {
       const previous = documents;
@@ -68,5 +78,5 @@ export function useDocuments() {
     [documents],
   );
 
-  return { documents, loading, error, setError, refresh, upload, remove };
+  return { documents, loading, error, setError, refresh, upload, addSamples, remove };
 }

@@ -6,6 +6,7 @@ Tests build their own container with fake providers and pass it to `create_app`.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cached_property
 
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -18,7 +19,7 @@ from app.providers.factory import build_embeddings, build_llm, build_vector_stor
 from app.providers.llm.base import LLMProvider
 from app.providers.vectorstore.base import VectorStore
 from app.services.chat_service import ChatService
-from app.services.ingestion import IngestionService
+from app.services.ingestion import IngestionQueue, IngestionService
 from app.services.retrieval import Retriever
 
 
@@ -31,9 +32,15 @@ class AppContainer:
     vector_store: VectorStore
     llm: LLMProvider
     chat_rate_limiter: SlidingWindowRateLimiter = field(init=False)
+    upload_rate_limiter: SlidingWindowRateLimiter = field(init=False)
 
     def __post_init__(self) -> None:
-        self.chat_rate_limiter = SlidingWindowRateLimiter(self.settings.chat_rate_limit_per_minute)
+        self.chat_rate_limiter = SlidingWindowRateLimiter(
+            self.settings.chat_rate_limit_per_minute, what="chat requests"
+        )
+        self.upload_rate_limiter = SlidingWindowRateLimiter(
+            self.settings.upload_rate_limit_per_minute, what="uploads"
+        )
 
     @property
     def retriever(self) -> Retriever:
@@ -44,6 +51,10 @@ class AppContainer:
         return IngestionService(
             self.settings, self.session_factory, self.embedder, self.vector_store
         )
+
+    @cached_property
+    def ingestion_queue(self) -> IngestionQueue:
+        return IngestionQueue(self.ingestion)
 
     @property
     def chat_service(self) -> ChatService:

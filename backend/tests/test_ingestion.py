@@ -4,19 +4,12 @@ from pathlib import Path
 import pymupdf
 
 from app.core.container import AppContainer
+from app.core.workspace import DEFAULT_WORKSPACE_ID
 from app.db.session import session_scope
 from app.models.document import DocumentStatus
 from app.repositories.document_repository import DocumentRepository
 from app.services.pdf_parser import extract_pages
-from tests.conftest import SAMPLE_PAGES
-
-
-def _register(container: AppContainer, path: Path) -> uuid.UUID:
-    with session_scope(container.session_factory) as session:
-        document = DocumentRepository(session).create(
-            filename=path.name, storage_path=str(path), file_size=path.stat().st_size
-        )
-        return document.id
+from tests.conftest import SAMPLE_PAGES, register_document
 
 
 def _load(container: AppContainer, doc_id: uuid.UUID):
@@ -33,7 +26,7 @@ def test_extract_pages_returns_text_per_page(sample_pdf: Path) -> None:
 
 
 def test_ingest_sample_pdf_end_to_end(container: AppContainer, sample_pdf: Path) -> None:
-    doc_id = _register(container, sample_pdf)
+    doc_id = register_document(container, sample_pdf)
 
     container.ingestion.ingest(doc_id)
 
@@ -51,6 +44,7 @@ def test_ingest_sample_pdf_end_to_end(container: AppContainer, sample_pdf: Path)
         container.embedder.embed_query("refund unopened bags"), top_k=1
     )[0]
     assert match.metadata == {
+        "workspace_id": str(DEFAULT_WORKSPACE_ID),
         "document_id": str(doc_id),
         "filename": sample_pdf.name,
         "page": 2,
@@ -65,7 +59,7 @@ def test_pdf_without_text_is_marked_failed(container: AppContainer, tmp_path: Pa
     doc.new_page()
     doc.save(str(path))
     doc.close()
-    doc_id = _register(container, path)
+    doc_id = register_document(container, path)
 
     container.ingestion.ingest(doc_id)
 
@@ -79,7 +73,7 @@ def test_pdf_without_text_is_marked_failed(container: AppContainer, tmp_path: Pa
 def test_corrupt_pdf_is_marked_failed(container: AppContainer, tmp_path: Path) -> None:
     path = tmp_path / "corrupt.pdf"
     path.write_bytes(b"%PDF-1.7\nthis is not really a pdf")
-    doc_id = _register(container, path)
+    doc_id = register_document(container, path)
 
     container.ingestion.ingest(doc_id)
 

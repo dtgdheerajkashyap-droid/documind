@@ -17,17 +17,23 @@ class ChatRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def create_session(self, title: str) -> ChatSession:
-        chat = ChatSession(title=title[:200])
+    def create_session(self, title: str, workspace_id: uuid.UUID) -> ChatSession:
+        chat = ChatSession(title=title[:200], workspace_id=workspace_id)
         self.session.add(chat)
         self.session.flush()
         return chat
 
-    def get_session(self, session_id: uuid.UUID) -> ChatSession | None:
-        return self.session.get(ChatSession, session_id)
+    def get_session(
+        self, session_id: uuid.UUID, workspace_id: uuid.UUID | None = None
+    ) -> ChatSession | None:
+        """Fetch a session; when `workspace_id` is given, other workspaces' sessions are hidden."""
+        chat = self.session.get(ChatSession, session_id)
+        if chat is None or (workspace_id is not None and chat.workspace_id != workspace_id):
+            return None
+        return chat
 
-    def list_sessions(self) -> list[tuple[ChatSession, int]]:
-        """All sessions, most recently active first, with their message counts."""
+    def list_sessions(self, workspace_id: uuid.UUID) -> list[tuple[ChatSession, int]]:
+        """The workspace's sessions, most recently active first, with their message counts."""
         counts = (
             select(ChatMessage.session_id, func.count(ChatMessage.id).label("n"))
             .group_by(ChatMessage.session_id)
@@ -36,6 +42,7 @@ class ChatRepository:
         stmt = (
             select(ChatSession, func.coalesce(counts.c.n, 0))
             .outerjoin(counts, counts.c.session_id == ChatSession.id)
+            .where(ChatSession.workspace_id == workspace_id)
             .order_by(ChatSession.updated_at.desc())
         )
         return [(row[0], int(row[1])) for row in self.session.execute(stmt).all()]

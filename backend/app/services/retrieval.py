@@ -25,11 +25,18 @@ class Retriever:
         self.vector_store = vector_store
 
     def retrieve(
-        self, query: str, top_k: int, document_ids: list[str] | None = None
+        self,
+        query: str,
+        top_k: int,
+        document_ids: list[str] | None = None,
+        *,
+        workspace_id: str | None = None,
     ) -> list[RetrievedChunk]:
         """Top-k chunks by cosine similarity, best first."""
         embedding = self.embedder.embed_query(query)
-        matches = self.vector_store.query(embedding, top_k=top_k, document_ids=document_ids)
+        matches = self.vector_store.query(
+            embedding, top_k=top_k, workspace_id=workspace_id, document_ids=document_ids
+        )
         chunks = [
             RetrievedChunk(
                 chunk_id=m.id,

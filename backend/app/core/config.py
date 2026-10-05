@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     chroma_collection: str = "documind_chunks"
     upload_dir: Path = Path("./data/uploads")
     max_upload_mb: int = Field(default=20, gt=0, le=200)
+    # Hard cap on a whole upload request, enforced while the body streams in.
+    max_request_mb: int = Field(default=60, gt=0, le=2000)
+    max_files_per_upload: int = Field(default=10, ge=1, le=100)
+    max_documents_per_workspace: int = Field(default=25, ge=1)
 
     # --- Embeddings --------------------------------------------------------
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -58,9 +62,15 @@ class Settings(BaseSettings):
 
     # --- API ---------------------------------------------------------------
     cors_origins: str = "http://localhost:3000"
+    # Optional regex for extra allowed origins, e.g. Vercel preview URLs.
+    cors_origin_regex: str | None = None
     chat_rate_limit_per_minute: int = Field(default=20, ge=0)
+    upload_rate_limit_per_minute: int = Field(default=10, ge=0)
+    # Number of reverse proxies in front of the API whose X-Forwarded-For entries
+    # can be trusted. 0 = ignore the header (it can be forged by any client).
+    trusted_proxy_hops: int = Field(default=0, ge=0, le=5)
 
-    @field_validator("gemini_api_key", "gemini_thinking_budget", mode="before")
+    @field_validator("gemini_api_key", "gemini_thinking_budget", "cors_origin_regex", mode="before")
     @classmethod
     def _empty_to_none(cls, value: object) -> object:
         # `GEMINI_API_KEY=` in a .env file should mean "not set", not "empty key".
@@ -86,6 +96,10 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def max_request_bytes(self) -> int:
+        return self.max_request_mb * 1024 * 1024
 
 
 @lru_cache

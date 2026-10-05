@@ -40,15 +40,17 @@ from app.core.config import Settings
 from app.core.container import AppContainer
 from app.core.errors import AppError
 from app.core.logging import configure_logging
+from app.core.workspace import DEFAULT_WORKSPACE_ID
 from app.db.base import Base
 from app.db.session import create_db_engine, create_session_factory, session_scope
 from app.models.document import DocumentStatus
 from app.providers.factory import build_embeddings, build_llm, build_vector_store
+from app.providers.llm.base import LLMProvider
 from app.repositories.document_repository import DocumentRepository
 from app.schemas.chat import ChatRequest
 
 DEFAULT_DATASET = ROOT / "scripts" / "eval" / "dataset.json"
-DEFAULT_DOCS = ROOT / "scripts" / "eval" / "sample_docs"
+DEFAULT_DOCS = BACKEND / "sample_docs"  # also offered in the UI as sample documents
 DEFAULT_OUTPUT = ROOT / "docs" / "evaluation_results.md"
 WORKDIR = ROOT / "scripts" / "eval" / ".eval_workdir"
 
@@ -111,7 +113,10 @@ def ingest(container: AppContainer, docs_dir: Path) -> dict[str, int]:
     for pdf in pdfs:
         with session_scope(container.session_factory) as session:
             doc = DocumentRepository(session).create(
-                filename=pdf.name, storage_path=str(pdf), file_size=pdf.stat().st_size
+                workspace_id=DEFAULT_WORKSPACE_ID,
+                filename=pdf.name,
+                storage_path=str(pdf),
+                file_size=pdf.stat().st_size,
             )
         container.ingestion.ingest(doc.id)
         with session_scope(container.session_factory) as session:
@@ -144,13 +149,15 @@ def evaluate_retrieval(container: AppContainer, questions: list[dict], k: int) -
     return results
 
 
-async def run_judge(container: AppContainer, results: list[Result], delay: float) -> None:
-    llm = container.llm
+async def run_judge(
+    container: AppContainer, judge: LLMProvider, results: list[Result], delay: float
+) -> None:
+    llm = judge
     service = container.chat_service
     for i, r in enumerate(results, 1):
         print(f"  [{i}/{len(results)}] {r.id}: answering...", flush=True)
         answer, refused = "", True
-        async for event in service.stream(ChatRequest(question=r.question)):
+        async for event in service.stream(ChatRequest(question=r.question), DEFAULT_WORKSPACE_ID):
             if event.event == "done":
                 answer, refused = event.data["answer"], event.data["refused"]
             elif event.event == "error":
@@ -234,7 +241,7 @@ def to_markdown(
         f"| Chunk size / overlap | {settings.chunk_size} / {settings.chunk_overlap} chars |",
         f"| top-k | {k} |",
         f"| Refusal threshold (cosine) | {settings.retrieval_min_score} |",
-        f"| LLM (judge run) | {llm_name or 'not run'} |",
+        f"| LLM answering / judging | {llm_name or 'not run'} |",
         "",
         "## Retrieval metrics",
         "",
@@ -296,6 +303,12 @@ def main() -> None:
     )
     parser.add_argument("--judge", action="store_true", help="also run LLM-as-judge (needs an LLM)")
     parser.add_argument(
+        "--judge-model",
+        default=None,
+        help="Gemini model for grading (default: same as answering). A different model "
+        "avoids a model grading its own answers.",
+    )
+    parser.add_argument(
         "--delay", type=float, default=4.0, help="seconds between LLM calls (free-tier limits)"
     )
     args = parser.parse_args()
@@ -338,9 +351,12 @@ def main() -> None:
 
     llm_name = None
     if args.judge:
-        print(f"Running end-to-end answers + LLM judge with {container.llm.name}...")
-        asyncio.run(run_judge(container, results, args.delay))
-        llm_name = container.llm.name
+        judge = container.llm
+        if args.judge_model:
+            judge = build_llm(settings.model_copy(update={"gemini_model": args.judge_model}))
+        print(f"Running end-to-end answers ({container.llm.name}) + judge ({judge.name})...")
+        asyncio.run(run_judge(container, judge, results, args.delay))
+        llm_name = f"{container.llm.name} / {judge.name}"
 
     summary = summarise(results, k, settings.retrieval_min_score)
     markdown = to_markdown(results, summary, settings, stats, k, llm_name)

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -18,10 +19,12 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.core.container import AppContainer
+from app.core.workspace import DEFAULT_WORKSPACE_ID
 from app.db.base import Base
-from app.db.session import create_db_engine, create_session_factory
+from app.db.session import create_db_engine, create_session_factory, session_scope
 from app.main import create_app
 from app.providers.vectorstore.chroma import ChromaVectorStore
+from app.repositories.document_repository import DocumentRepository
 from tests.fakes import FakeLLM, HashingEmbeddings
 
 SAMPLE_PAGES = [
@@ -43,6 +46,29 @@ def make_pdf(path: Path, pages: list[str]) -> Path:
     doc.save(str(path))
     doc.close()
     return path
+
+
+def register_document(
+    container: AppContainer, path: Path, workspace_id: uuid.UUID = DEFAULT_WORKSPACE_ID
+) -> uuid.UUID:
+    """Create a queued document row for an existing PDF file."""
+    with session_scope(container.session_factory) as session:
+        document = DocumentRepository(session).create(
+            workspace_id=workspace_id,
+            filename=path.name,
+            storage_path=str(path),
+            file_size=path.stat().st_size,
+        )
+        return document.id
+
+
+def ingest_document(
+    container: AppContainer, path: Path, workspace_id: uuid.UUID = DEFAULT_WORKSPACE_ID
+) -> uuid.UUID:
+    """Register and synchronously ingest a PDF."""
+    document_id = register_document(container, path, workspace_id)
+    container.ingestion.ingest(document_id)
+    return document_id
 
 
 @pytest.fixture

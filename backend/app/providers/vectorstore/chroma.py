@@ -43,15 +43,27 @@ class ChromaVectorStore(VectorStore):
                 )
 
     def query(
-        self, embedding: list[float], top_k: int, document_ids: list[str] | None = None
+        self,
+        embedding: list[float],
+        top_k: int,
+        *,
+        workspace_id: str | None = None,
+        document_ids: list[str] | None = None,
     ) -> list[VectorMatch]:
-        where: dict[str, Any] | None = None
+        conditions: list[dict[str, Any]] = []
+        if workspace_id is not None:
+            conditions.append({"workspace_id": workspace_id})
         if document_ids:
-            where = (
+            conditions.append(
                 {"document_id": document_ids[0]}
                 if len(document_ids) == 1
                 else {"document_id": {"$in": document_ids}}
             )
+        where: dict[str, Any] | None = None
+        if len(conditions) == 1:
+            where = conditions[0]
+        elif conditions:
+            where = {"$and": conditions}
         result = self._collection.query(
             query_embeddings=[embedding],
             n_results=top_k,
@@ -79,3 +91,6 @@ class ChromaVectorStore(VectorStore):
 
     def count(self) -> int:
         return self._collection.count()
+
+    def count_document(self, document_id: str) -> int:
+        return len(self._collection.get(where={"document_id": document_id}, include=[])["ids"])

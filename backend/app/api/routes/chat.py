@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import ContainerDep
 from app.core.rate_limit import client_key
+from app.core.workspace import WorkspaceDep
 from app.schemas.chat import ChatRequest
 from app.services.chat_service import ChatEvent
 
@@ -37,18 +38,18 @@ async def _sse(events: AsyncIterator[ChatEvent]) -> AsyncIterator[str]:
     },
 )
 async def chat(
-    payload: ChatRequest, request: Request, container: ContainerDep
+    payload: ChatRequest, request: Request, container: ContainerDep, workspace_id: WorkspaceDep
 ) -> StreamingResponse:
     """Answer a question from the uploaded documents, streaming the answer as SSE.
 
     Errors detected before streaming (missing API key, unknown session, rate limit)
     are returned as regular JSON error responses.
     """
-    container.chat_rate_limiter.check(client_key(request))
+    container.chat_rate_limiter.check(client_key(request, container.settings.trusted_proxy_hops))
     service = container.chat_service
-    await anyio.to_thread.run_sync(service.validate, payload)
+    await anyio.to_thread.run_sync(service.validate, payload, workspace_id)
     return StreamingResponse(
-        _sse(service.stream(payload)),
+        _sse(service.stream(payload, workspace_id)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

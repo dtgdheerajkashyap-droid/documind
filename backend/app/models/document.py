@@ -23,7 +23,10 @@ class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     filename: Mapped[str] = mapped_column(String(255))
+    # SHA-256 of the file, used to reject duplicate uploads within a workspace.
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     storage_path: Mapped[str] = mapped_column(String(1024))
     file_size: Mapped[int] = mapped_column(Integer)
     status: Mapped[DocumentStatus] = mapped_column(
