@@ -1,0 +1,4 @@
+# Keep LF endings everywhere (Prettier, Docker, and CI on Linux expect them)
+* text=auto eol=lf
+*.pdf binary
+*.ico binary

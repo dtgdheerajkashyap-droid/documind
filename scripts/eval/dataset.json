@@ -1,0 +1,143 @@
+{
+  "description": "Questions over the two sample PDFs. expected_sources lists the (filename, page) pairs that contain the answer; an empty list means the question is NOT answerable from the documents and the system should refuse.",
+  "questions": [
+    {
+      "id": "q01",
+      "question": "Who started Northwind Robotics?",
+      "expected_sources": [{ "filename": "northwind_handbook.pdf", "page": 1 }],
+      "reference_answer": "Dr. Elena Vasquez and Marcus Obi founded it."
+    },
+    {
+      "id": "q02",
+      "question": "Where are Northwind's offices located?",
+      "expected_sources": [{ "filename": "northwind_handbook.pdf", "page": 1 }],
+      "reference_answer": "Pittsburgh (headquarters), Austin, and Rotterdam."
+    },
+    {
+      "id": "q03",
+      "question": "During which hours do I need to be available?",
+      "expected_sources": [{ "filename": "northwind_handbook.pdf", "page": 2 }],
+      "reference_answer": "Core hours are 10:00 to 15:00 local time."
+    },
+    {
+      "id": "q04",
+      "question": "How many days a week do hybrid employees have to come into the office?",
+      "expected_sources": [{ "filename": "northwind_handbook.pdf", "page": 2 }],
+      "reference_answer": "At least two days per week, with Tuesday and Thursday as anchor days."
+    },
+    {
+      "id": "q05",
+      "question": "How much money do I get to set up my home office?",
+      "expected_sources": [{ "filename": "northwind_handbook.pdf", "page": 2 }],
+      "reference_answer": "A one-time 600 USD equipment stipend plus 40 USD per month for internet."
+    },
+    {
+      "id": "q06",
+      "question": "How many vacation days do full-time employees get each year?",
+      "expected_sources": [{ "filename": "northwind_handbook.pdf", "page": 3 }],
+      "reference_answer": "25 days of paid time off per calendar year."
+    },
+    {
+      "id": "q07",
+      "question": "Can unused PTO roll over to next year?",
+      "expected_sources": [{ "filename": "northwind_handbook.pdf", "page": 3 }],
+      "reference_answer": "Yes, up to 5 days, which expire on March 31."
+    },
+    {
+      "id": "q08",
+      "question": "How long is parental leave?",
+      "expected_sources": [{ "filename": "northwind_handbook.pdf", "page": 3 }],
+      "reference_answer": "16 weeks of fully paid parental leave for all parents."
+    },
+    {
+      "id": "q09",
+      "question": "What is the daily food budget when travelling abroad for work?",
+      "expected_sources": [{ "filename": "northwind_handbook.pdf", "page": 4 }],
+      "reference_answer": "100 USD per day for international trips."
+    },
+    {
+      "id": "q10",
+      "question": "When am I allowed to book premium economy flights?",
+      "expected_sources": [{ "filename": "northwind_handbook.pdf", "page": 4 }],
+      "reference_answer": "For flights of six hours or more."
+    },
+    {
+      "id": "q11",
+      "question": "What is the deadline for submitting expense reports?",
+      "expected_sources": [{ "filename": "northwind_handbook.pdf", "page": 4 }],
+      "reference_answer": "Within 30 days of the purchase, in Ledgerly, with an itemized receipt."
+    },
+    {
+      "id": "q12",
+      "question": "I clicked a phishing link. Who do I tell and how fast?",
+      "expected_sources": [{ "filename": "northwind_handbook.pdf", "page": 5 }],
+      "reference_answer": "Report it to security@northwind.example within one hour."
+    },
+    {
+      "id": "q13",
+      "question": "How heavy a load can the Atlas-7 carry?",
+      "expected_sources": [{ "filename": "atlas7_manual.pdf", "page": 1 }],
+      "reference_answer": "A maximum payload of 35 kg."
+    },
+    {
+      "id": "q14",
+      "question": "How long does it take to charge the robot's battery to 80 percent?",
+      "expected_sources": [{ "filename": "atlas7_manual.pdf", "page": 1 }],
+      "reference_answer": "45 minutes from 0 to 80 percent with fast charging."
+    },
+    {
+      "id": "q15",
+      "question": "How close can a person get before the robot comes to a full stop?",
+      "expected_sources": [{ "filename": "atlas7_manual.pdf", "page": 2 }],
+      "reference_answer": "The stop zone is 0.5 meters; it slows down at 1.5 meters."
+    },
+    {
+      "id": "q16",
+      "question": "How often should the drive wheels be replaced?",
+      "expected_sources": [{ "filename": "atlas7_manual.pdf", "page": 3 }],
+      "reference_answer": "Every 2,000 operating hours."
+    },
+    {
+      "id": "q17",
+      "question": "What does error E204 mean and how do I fix it?",
+      "expected_sources": [{ "filename": "atlas7_manual.pdf", "page": 4 }],
+      "reference_answer": "Battery temperature high: move the robot somewhere cooler and let it rest 20 minutes."
+    },
+    {
+      "id": "q18",
+      "question": "The robot doesn't know where it is anymore. What should I do?",
+      "expected_sources": [{ "filename": "atlas7_manual.pdf", "page": 4 }],
+      "reference_answer": "Error E450: drive it to the nearest fiducial marker and select Re-localize in the Fleet Console."
+    },
+    {
+      "id": "u01",
+      "question": "What is the capital of Australia?",
+      "expected_sources": [],
+      "reference_answer": null
+    },
+    {
+      "id": "u02",
+      "question": "How do I bake sourdough bread at home?",
+      "expected_sources": [],
+      "reference_answer": null
+    },
+    {
+      "id": "u03",
+      "question": "Who won the 2022 FIFA World Cup?",
+      "expected_sources": [],
+      "reference_answer": null
+    },
+    {
+      "id": "u04",
+      "question": "What is Northwind Robotics' current stock price?",
+      "expected_sources": [],
+      "reference_answer": null
+    },
+    {
+      "id": "u05",
+      "question": "How much does the Atlas-7 robot cost to buy?",
+      "expected_sources": [],
+      "reference_answer": null
+    }
+  ]
+}
