@@ -35,9 +35,14 @@ class Settings(BaseSettings):
     max_documents_per_workspace: int = Field(default=25, ge=1)
 
     # --- Embeddings --------------------------------------------------------
+    # "onnx" runs the model with ONNX Runtime (small, no PyTorch); "sentence-transformers"
+    # needs `pip install sentence-transformers` and supports GPUs via EMBEDDING_DEVICE.
+    embedding_backend: Literal["onnx", "sentence-transformers"] = "onnx"
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embedding_device: str = "cpu"
     embedding_batch_size: int = Field(default=32, gt=0)
+    # ONNX Runtime threads; 0 = one per CPU core.
+    embedding_threads: int = Field(default=0, ge=0)
 
     # --- Chunking & retrieval ---------------------------------------------
     chunk_size: int = Field(default=800, ge=100, le=8000)

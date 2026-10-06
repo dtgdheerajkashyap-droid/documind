@@ -11,7 +11,7 @@ passage). If the documents don't contain the answer, it says
 **"I couldn't find this in your documents."** instead of guessing.
 
 - **Backend:** Python 3.11 · FastAPI · Pydantic v2 · SQLAlchemy 2.0 · Alembic · PostgreSQL
-- **RAG:** PyMuPDF · sentence-transformers `all-MiniLM-L6-v2` (local) · ChromaDB · Google Gemini (swappable with Ollama)
+- **RAG:** PyMuPDF · `all-MiniLM-L6-v2` embeddings (local, ONNX Runtime) · ChromaDB · Google Gemini (swappable with Ollama)
 - **Frontend:** Next.js 16 (App Router) · TypeScript · Tailwind CSS 4
 - **Quality:** 92 pytest tests · 27 Vitest tests · ruff · black · ESLint · Prettier · GitHub Actions · Docker Compose
 
@@ -79,7 +79,7 @@ flowchart LR
 
     PG[("PostgreSQL<br/>documents · chunks<br/>sessions · messages")]
     CH[("ChromaDB<br/>chunk vectors + metadata")]
-    ST["sentence-transformers<br/>all-MiniLM-L6-v2 (local)"]
+    ST["ONNX Runtime<br/>all-MiniLM-L6-v2 (local)"]
     LLM["Gemini API<br/>(or Ollama)"]
     FS[("Uploaded PDFs<br/>on disk")]
 
@@ -103,7 +103,7 @@ The backend is layered so each concern can change independently:
 | `services` | Business logic: ingestion pipeline, retrieval, chat orchestration, prompts |
 | `repositories` | All SQL lives here (SQLAlchemy 2.0 typed queries) |
 | `models` / `schemas` | ORM tables / Pydantic API contract |
-| `providers` | Abstract `LLMProvider`, `EmbeddingProvider`, `VectorStore` with concrete Gemini/Ollama, sentence-transformers, and Chroma implementations |
+| `providers` | Abstract `LLMProvider`, `EmbeddingProvider`, `VectorStore` with concrete Gemini/Ollama, ONNX/sentence-transformers, and Chroma implementations |
 | `core` | Settings (pydantic-settings), JSON logging, error handling, rate limiting, and the dependency container |
 
 `core/container.py` is the single composition root. Tests build the same container with fakes
@@ -264,9 +264,11 @@ All settings are environment variables (read by `pydantic-settings`, optionally 
 | `MAX_REQUEST_MB` | `60` | Hard cap on a whole upload request, enforced while it streams in |
 | `MAX_FILES_PER_UPLOAD` | `10` | Files per upload request |
 | `MAX_DOCUMENTS_PER_WORKSPACE` | `25` | Documents per workspace (per browser) |
-| `EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Any sentence-transformers model |
-| `EMBEDDING_DEVICE` | `cpu` | `cuda` if available |
-| `EMBEDDING_BATCH_SIZE` | `32` | Encode batch size |
+| `EMBEDDING_BACKEND` | `onnx` | `onnx` (ONNX Runtime, no PyTorch) or `sentence-transformers` (`pip install sentence-transformers` first) |
+| `EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | A sentence-transformers model; the `onnx` backend needs one that ships `onnx/model.onnx` |
+| `EMBEDDING_DEVICE` | `cpu` | `cuda` if available (`sentence-transformers` backend only) |
+| `EMBEDDING_BATCH_SIZE` | `32` | Encode batch size; smaller lowers peak RAM |
+| `EMBEDDING_THREADS` | `0` | ONNX Runtime threads (`0` = one per core) |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | `800` / `150` | Characters; overlap must be < size |
 | `RETRIEVAL_TOP_K` | `5` | Chunks sent to the LLM |
 | `RETRIEVAL_MIN_SCORE` | `0.3` | Cosine similarity below which we refuse |
@@ -451,22 +453,32 @@ The live demo runs on free tiers:
 | Part | Host | Why |
 |---|---|---|
 | Frontend (Next.js) | **Vercel** | Native Next.js hosting, global CDN |
-| Backend (FastAPI + embedding model) | **Hugging Face Spaces** (Docker) | Vercel's serverless functions can't run it: PyTorch plus the model exceed the ~250 MB function limit, and it needs a disk for Chroma and long-lived streaming responses. Spaces give a free 16 GB-RAM container |
-| Database | **Neon** (serverless Postgres) | Free managed Postgres; keeps documents, chunks, and chats across Space restarts |
+| Backend (FastAPI + embedding model) | **Render** free web service (Docker) | Vercel's serverless functions can't run it: it needs a disk for Chroma, a background ingestion worker, and long-lived streaming responses |
+| Database | **Neon** (serverless Postgres) | Free managed Postgres; keeps documents, chunks, and chats across backend restarts |
 
-The Space's disk is ephemeral. That's fine because of the self-healing index: on restart the
-backend rebuilds Chroma from the chunks stored in Neon. Free Spaces sleep after about 48 h without
-traffic, and the first request then takes about a minute while the container wakes up (the
+Render's free instance has 512 MB of RAM. PyTorch alone needs about 400 MB, so the embedding model
+runs on **ONNX Runtime** instead (same `all-MiniLM-L6-v2` weights and pooling; vectors match the
+sentence-transformers output to ~1e-7). With `EMBEDDING_BATCH_SIZE=8` the API peaks around 300 MB
+while ingesting.
+
+The instance's disk is ephemeral. That's fine because of the self-healing index: on restart the
+backend rebuilds Chroma from the chunks stored in Neon. Free Render services sleep after 15 minutes
+without traffic, and the first request then takes about a minute while the container wakes up (the
 frontend explains this if the API is unreachable).
 
 **Deploy it yourself:**
 
-1. Create a Neon project and a Hugging Face write token, and put them in `deploy.env`
+1. Create a Neon project, a Render API key, and a Vercel token, and put them in `deploy.env`
    (copy `deploy.env.example`; the real file is gitignored), with `GEMINI_API_KEY` in `.env`.
-2. Backend: `backend/.venv/Scripts/python scripts/deploy_hf_space.py --frontend-url https://<your-app>.vercel.app`.
-   This creates the Space, sets its secrets and variables, and uploads `backend/`. The container
-   runs `alembic upgrade head` on start.
-3. Frontend: from `frontend/`, run `npx vercel deploy --prod --build-env NEXT_PUBLIC_API_URL=https://<user>-documind-api.hf.space`.
+2. Backend: push to GitHub (Render builds `backend/Dockerfile` from the repository), then run
+   `backend/.venv/Scripts/python scripts/deploy_render.py --frontend-url https://<your-app>.vercel.app --wait`.
+   This creates the service (or updates its environment and redeploys). The container runs
+   `alembic upgrade head` on start, and later pushes to `main` redeploy automatically.
+3. Frontend: from `frontend/`, run
+   `npx vercel deploy --prod --build-env NEXT_PUBLIC_API_URL=https://documind-api.onrender.com`.
+
+`scripts/deploy_hf_space.py` deploys the same image to a Hugging Face Docker Space instead; those
+now require a Hugging Face PRO subscription.
 
 ## Design decisions & trade-offs
 
@@ -516,8 +528,7 @@ frontend explains this if the API is unreachable).
   rather than keyword matching.
 - The evaluation set is small and synthetic.
 - **Not verified locally:** `docker compose up` (Docker was unavailable on the build machine).
-  Both Docker images are built in CI, and the backend image runs in production on Hugging Face
-  Spaces.
+  Both Docker images are built in CI, and the backend image runs in production on Render.
 - Free-tier Gemini capacity varies: during development every Flash model briefly returned 503
   "high demand", which is why the provider retries and falls back to a Lite model.
 
@@ -561,7 +572,8 @@ frontend explains this if the API is unreachable).
 ├── scripts/
 │   ├── evaluate.py            # retrieval + LLM-judge evaluation
 │   ├── make_sample_docs.py    # regenerates the sample PDFs
-│   ├── deploy_hf_space.py     # deploys the backend to Hugging Face Spaces
+│   ├── deploy_render.py       # deploys the backend to Render (free tier)
+│   ├── deploy_hf_space.py     # alternative: Hugging Face Spaces (needs HF PRO)
 │   └── eval/                  # dataset.json
 ├── deploy/huggingface/        # Space README (Docker SDK config)
 ├── docs/

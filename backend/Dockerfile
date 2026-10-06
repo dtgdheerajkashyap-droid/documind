@@ -7,22 +7,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     # The embedding model is downloaded into the image at build time (see below),
     # so containers start without a ~90 MB download.
     HF_HOME=/opt/hf-cache \
+    HF_HUB_OFFLINE=1 \
     CHROMA_PERSIST_DIR=/data/chroma \
     UPLOAD_DIR=/data/uploads \
     PORT=8000
 
 WORKDIR /app
 
-# Install the CPU-only PyTorch wheel first so sentence-transformers does not
-# pull the (multi-GB) CUDA build.
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
-
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-# Bake the embedding model into the image.
+# Bake the embedding model (ONNX export + tokenizer) into the image.
 ARG EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL}')"
+RUN HF_HUB_OFFLINE=0 python -c "from huggingface_hub import snapshot_download; snapshot_download('${EMBEDDING_MODEL}', allow_patterns=['onnx/model.onnx', 'tokenizer.json', 'sentence_bert_config.json'])"
 
 COPY . .
 

@@ -34,6 +34,15 @@ def build_llm(settings: Settings) -> LLMProvider:
 
 
 def build_embeddings(settings: Settings) -> EmbeddingProvider:
+    if settings.embedding_backend == "onnx":
+        from app.providers.embeddings.onnx import OnnxEmbeddings
+
+        return OnnxEmbeddings(
+            settings.embedding_model,
+            batch_size=settings.embedding_batch_size,
+            threads=settings.embedding_threads,
+        )
+
     from app.providers.embeddings.sentence_transformer import SentenceTransformerEmbeddings
 
     return SentenceTransformerEmbeddings(
