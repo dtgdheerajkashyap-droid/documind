@@ -16,7 +16,7 @@ passage). If the documents don't contain the answer, it says
 - **Backend:** Python 3.11 · FastAPI · Pydantic v2 · SQLAlchemy 2.0 · Alembic · PostgreSQL
 - **RAG:** PyMuPDF · `all-MiniLM-L6-v2` embeddings (local, ONNX Runtime) · ChromaDB · Google Gemini (swappable with Ollama)
 - **Frontend:** Next.js 16 (App Router) · TypeScript · Tailwind CSS 4
-- **Quality:** 113 pytest tests · 27 Vitest tests · ruff · black · ESLint · Prettier · GitHub Actions · Docker Compose
+- **Quality:** 113 pytest tests · 42 Vitest tests · ruff · black · ESLint · Prettier · GitHub Actions · Docker Compose
 
 ---
 
@@ -45,7 +45,10 @@ passage). If the documents don't contain the answer, it says
   bytes, 20 MB limit), and live status: `queued → processing → ready | failed`.
 - **Background ingestion:** per-page text extraction, cleaning, overlapping boundary-aware chunking,
   local embeddings, vectors in ChromaDB, chunk records in PostgreSQL.
-- **Grounded chat** with **streamed answers (Server-Sent Events)** and inline `[n]` citations.
+- **Grounded chat** with **streamed answers (Server-Sent Events)** and inline `[n]` citations,
+  rendered as structured Markdown (headings, numbered steps, code blocks, tables) by a small
+  built-in parser that cannot inject HTML, with source cards, a "grounded in N sources" badge, a
+  clear not-found notice, and copy-to-clipboard.
 - **Hybrid retrieval:** vector search fused with BM25 keyword ranking, so numbered parts and codes
   ("explain the first program", "Experiment 3", "E450") are found even when their chunk is mostly
   code or tables.
