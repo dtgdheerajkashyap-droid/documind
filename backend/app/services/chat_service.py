@@ -119,8 +119,12 @@ class ChatService:
             yield ChatEvent("meta", {"session_id": str(session_id), "standalone_query": standalone})
 
             chunks = await self._retrieve(standalone, request, workspace_id)
-            best = chunks[0].score if chunks else None
-            grounded = best is not None and best >= self.settings.retrieval_min_score
+            best = max((c.score for c in chunks), default=None)
+            # Answer if a passage is semantically close enough, or names exactly what was
+            # asked for ("Program 1") even though its embedding is not close (e.g. code).
+            grounded = any(
+                c.score >= self.settings.retrieval_min_score or c.keyword_match for c in chunks
+            )
 
             if not grounded:
                 answer, citations = REFUSAL_MESSAGE, []

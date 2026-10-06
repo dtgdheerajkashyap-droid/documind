@@ -50,24 +50,10 @@ class ChromaVectorStore(VectorStore):
         workspace_id: str | None = None,
         document_ids: list[str] | None = None,
     ) -> list[VectorMatch]:
-        conditions: list[dict[str, Any]] = []
-        if workspace_id is not None:
-            conditions.append({"workspace_id": workspace_id})
-        if document_ids:
-            conditions.append(
-                {"document_id": document_ids[0]}
-                if len(document_ids) == 1
-                else {"document_id": {"$in": document_ids}}
-            )
-        where: dict[str, Any] | None = None
-        if len(conditions) == 1:
-            where = conditions[0]
-        elif conditions:
-            where = {"$and": conditions}
         result = self._collection.query(
             query_embeddings=[embedding],
             n_results=top_k,
-            where=where,
+            where=_where(workspace_id, document_ids),
             include=["documents", "metadatas", "distances"],
         )
         ids = result["ids"][0]
@@ -85,6 +71,30 @@ class ChromaVectorStore(VectorStore):
             for i in range(len(ids))
         ]
 
+    def scan(
+        self, *, workspace_id: str | None = None, document_ids: list[str] | None = None
+    ) -> list[VectorMatch]:
+        result = self._collection.get(
+            where=_where(workspace_id, document_ids), include=["documents", "metadatas"]
+        )
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
+        return [
+            VectorMatch(
+                id=id_, text=documents[i] or "", metadata=dict(metadatas[i] or {}), score=0.0
+            )
+            for i, id_ in enumerate(result["ids"])
+        ]
+
+    def embeddings(self, ids: list[str]) -> dict[str, list[float]]:
+        if not ids:
+            return {}
+        result = self._collection.get(ids=ids, include=["embeddings"])
+        vectors = result.get("embeddings")
+        if vectors is None:
+            return {}
+        return {id_: [float(x) for x in vectors[i]] for i, id_ in enumerate(result["ids"])}
+
     def delete_document(self, document_id: str) -> None:
         with self._lock:
             self._collection.delete(where={"document_id": document_id})
@@ -94,3 +104,18 @@ class ChromaVectorStore(VectorStore):
 
     def count_document(self, document_id: str) -> int:
         return len(self._collection.get(where={"document_id": document_id}, include=[])["ids"])
+
+
+def _where(workspace_id: str | None, document_ids: list[str] | None) -> dict[str, Any] | None:
+    conditions: list[dict[str, Any]] = []
+    if workspace_id is not None:
+        conditions.append({"workspace_id": workspace_id})
+    if document_ids:
+        conditions.append(
+            {"document_id": document_ids[0]}
+            if len(document_ids) == 1
+            else {"document_id": {"$in": document_ids}}
+        )
+    if len(conditions) == 1:
+        return conditions[0]
+    return {"$and": conditions} if conditions else None

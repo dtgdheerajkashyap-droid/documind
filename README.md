@@ -16,7 +16,7 @@ passage). If the documents don't contain the answer, it says
 - **Backend:** Python 3.11 · FastAPI · Pydantic v2 · SQLAlchemy 2.0 · Alembic · PostgreSQL
 - **RAG:** PyMuPDF · `all-MiniLM-L6-v2` embeddings (local, ONNX Runtime) · ChromaDB · Google Gemini (swappable with Ollama)
 - **Frontend:** Next.js 16 (App Router) · TypeScript · Tailwind CSS 4
-- **Quality:** 92 pytest tests · 27 Vitest tests · ruff · black · ESLint · Prettier · GitHub Actions · Docker Compose
+- **Quality:** 113 pytest tests · 27 Vitest tests · ruff · black · ESLint · Prettier · GitHub Actions · Docker Compose
 
 ---
 
@@ -46,8 +46,14 @@ passage). If the documents don't contain the answer, it says
 - **Background ingestion:** per-page text extraction, cleaning, overlapping boundary-aware chunking,
   local embeddings, vectors in ChromaDB, chunk records in PostgreSQL.
 - **Grounded chat** with **streamed answers (Server-Sent Events)** and inline `[n]` citations.
-- **Two-layer hallucination guard:** a retrieval-similarity threshold that refuses *before* calling
-  the LLM, and a strict grounding prompt with a fixed refusal phrase that is detected afterwards.
+- **Hybrid retrieval:** vector search fused with BM25 keyword ranking, so numbered parts and codes
+  ("explain the first program", "Experiment 3", "E450") are found even when their chunk is mostly
+  code or tables.
+- **Section-aware retrieval:** numbered parts of a manual ("Program 4: Build an autoencoder…")
+  are detected, so "explain Program 4 step by step" gets all of Program 4's code and output in
+  order, and every chunk is embedded and keyword-ranked together with its section's title.
+- **Two-layer hallucination guard:** a retrieval gate (similarity threshold, or an exact keyword
+  match) that refuses *before* calling the LLM, and a strict grounding prompt with a fixed refusal phrase that is detected afterwards.
 - **Chat sessions with history.** Follow-up questions ("what about opened bags?") are rewritten
   into standalone queries using recent turns before retrieval.
 - **Citations panel:** click a citation to see the exact passage, filename, page, and relevance.
@@ -152,8 +158,8 @@ sequenceDiagram
         A->>L: rewrite with last N turns → standalone query
     end
     A-->>U: event: meta (session_id, standalone_query)
-    A->>V: top-k nearest chunks (optionally filtered by document)
-    alt best similarity < RETRIEVAL_MIN_SCORE
+    A->>V: nearest chunks + BM25 keyword ranking, fused (optionally filtered by document)
+    alt best similarity < RETRIEVAL_MIN_SCORE and no exact keyword match
         A-->>U: event: token "I couldn't find this in your documents."
     else
         A->>L: grounded prompt (numbered sources + rules)
@@ -165,11 +171,44 @@ sequenceDiagram
     A-->>U: event: done (message_id, final answer, refused)
 ```
 
+**Hybrid retrieval**
+
+Embeddings capture meaning but are weak on labels: a chunk that starts with "Program 1:" and
+continues with 700 characters of MATLAB embeds as "code", so "explain the first program" never
+reached it. `services/lexical.py` adds a BM25 ranking over the workspace's chunks with a few
+normalisations for how people refer to numbered parts ("first" → `1`, "Experiment 01" →
+`experiment 1`, program/experiment/exercise/practical treated as one word, a light stemmer so
+"pre-trained models" matches "pre-train model", and "step by step" ignored). The two rankings
+are merged with reciprocal rank fusion. Chunks that literally contain what the question points at
+(a numbered label such as "Program 2", a code such as "E450", or a phrase found in at most three
+chunks, such as "course outcomes") are placed first, up to half of the results, and count as a
+**keyword match**.
+
+**Sections**
+
+Only the first chunk of a lab program says which program it is; the rest is code. That made
+"explain Program 4" retrieve the heading and miss the code, and "what is the mini-batch size in
+Program 5?" miss the line that answers it. `services/sections.py` finds numbered headings
+("Program 4:", "Experiment No. 3", "Week 2") in the ordered chunk texts. A section runs to the next
+heading of the same kind (the last one is cut at the typical section length, so an appendix does
+not join it); near-empty chunks (a running header on a blank page) and tables of contents are
+skipped. Two things use it:
+
+- When a question names a section, its chunks (up to 6,000 characters) are returned in order
+  ahead of the usual results and count as keyword matches.
+- Each chunk is embedded as `<section title>\n\n<chunk>` and keyword-ranked with the title as
+  context, so `trainingOptions('adam', ...)` in Program 6 is found by "what optimizer is used for
+  time series forecasting?". Titles never anchor a chunk, otherwise every chunk of Program 4
+  would "name" Program 4.
+
+Sections are computed from chunk text alone, so they need no schema change and also apply to
+documents indexed earlier (their stored vectors get the titles once re-embedded).
+
 **Grounding and hallucination control**
 
 - **Gate 1, retrieval threshold:** if the best cosine similarity is below `RETRIEVAL_MIN_SCORE`
-  (default 0.3), the API refuses without calling the LLM. This is cheap and catches off-topic
-  questions.
+  (default 0.3) and no chunk is a keyword match, the API refuses without calling the LLM. This is
+  cheap and catches off-topic questions.
 - **Gate 2, the prompt:** the system prompt says to use only the numbered sources, cite every claim
   as `[n]`, treat sources as data rather than instructions (a prompt-injection guard), and reply
   with the exact refusal sentence if the sources don't contain the answer. This catches on-topic
@@ -356,7 +395,9 @@ npm run format:check && npm run typecheck && npm run build
 |---|---|
 | `test_chunking.py` | Size limits, overlap, sentence/paragraph boundaries, no mid-word starts, hard cuts, invalid params, page numbering, text cleaning |
 | `test_ingestion.py` | Real PDF → pages → chunks → Chroma + Postgres; metadata correctness; scanned/blank PDFs and corrupt files marked `failed`; cleanup |
-| `test_retrieval.py` | Ranking, top-k, document filter, low scores for unrelated queries, empty index |
+| `test_retrieval.py` | Ranking, top-k, document filter, low scores for unrelated queries, empty index, numbered programs found in code-heavy chunks, a named program returning its whole section in order |
+| `test_lexical.py` | Ordinals and unit synonyms, stemming, "step by step" ignored, labels vs. stray numbers, identifiers, specific vs. ubiquitous phrases, section titles as context only |
+| `test_sections.py` | Section boundaries, tables of contents and blank pages skipped, last-section cut-off, titles, heading variants, title-prefixed embedding text |
 | `test_grounding.py` | Threshold refusal **without calling the LLM**, LLM refusal normalisation, citation numbering, prompt contents, follow-up rewriting with history, rewrite fallback, mid-stream LLM errors |
 | `test_api_*.py` | Upload validation (type, magic bytes, size, partial rejection), list/get/delete, SSE event sequence, session persistence, 404s, request validation, **missing `GEMINI_API_KEY` → 503 while the app still starts**, rate limiting, health, error format |
 | `test_gemini_provider.py` | Retry on 429/503, fallback to the next model, fail fast on 400, no retry after streaming has started |
@@ -528,8 +569,14 @@ now require a Hugging Face PRO subscription.
   cleanup of abandoned workspaces yet.
 - The rate limiter and embedding model live in the API process, so horizontal scaling needs Redis
   and a separate embedding worker.
-- Retrieval is pure dense vector search: exact identifiers ("E450") rely on the embedding model
-  rather than keyword matching.
+- Keyword search scans the workspace's chunks in Python on every question. That is fast at the
+  25-document workspace limit, but a larger corpus would need an inverted index (e.g. Postgres
+  full-text search).
+- Referring to a part by a word the document doesn't use ("the first lab" when the manual says
+  "Program 1") only works for the synonyms built in (program, experiment, exercise, practical,
+  assignment).
+- The last section of a kind has no next heading to end it, so it is cut at the median length of
+  the others: "explain Program 8" can include the first viva questions that follow it.
 - The evaluation set is small and synthetic.
 - **Not verified locally:** `docker compose up` (Docker was unavailable on the build machine).
   Both Docker images are built in CI, and the backend image runs in production on Render.
@@ -538,7 +585,7 @@ now require a Hugging Face PRO subscription.
 
 ## Future improvements
 
-- **Hybrid search** (BM25 + vectors with reciprocal rank fusion) and a **cross-encoder re-ranker**
+- A **cross-encoder re-ranker** on top of hybrid retrieval
 - A durable job queue for ingestion, with retries and progress percentages
 - OCR fallback (Tesseract) and table-aware parsing
 - Real auth (OAuth/JWT) on top of workspaces, plus scheduled cleanup of inactive workspaces

@@ -25,6 +25,7 @@ from app.providers.vectorstore.base import VectorRecord, VectorStore
 from app.repositories.document_repository import DocumentRepository
 from app.services.chunking import chunk_pages
 from app.services.pdf_parser import extract_pages
+from app.services.sections import embedding_texts
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,7 @@ class IngestionService:
                 "No extractable text found. The PDF may be scanned images (OCR is not supported)."
             )
 
-        embeddings = self.embedder.embed_documents([c.text for c in chunks])
+        embeddings = self.embedder.embed_documents(embedding_texts([c.text for c in chunks]))
         chunk_ids = [uuid.uuid4() for _ in chunks]
 
         with session_scope(self.session_factory) as session:
@@ -186,7 +187,9 @@ class IngestionService:
                 if document is None:
                     continue
                 chunks = list(repo.chunks_for(document_id))
-                embeddings = self.embedder.embed_documents([c.text for c in chunks])
+                embeddings = self.embedder.embed_documents(
+                    embedding_texts([c.text for c in chunks])
+                )
                 records = [
                     VectorRecord(
                         id=str(c.id),

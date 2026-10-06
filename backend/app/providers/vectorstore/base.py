@@ -40,6 +40,16 @@ class VectorStore(ABC):
         specific documents."""
 
     @abstractmethod
+    def scan(
+        self, *, workspace_id: str | None = None, document_ids: list[str] | None = None
+    ) -> list[VectorMatch]:
+        """Every record in a workspace and/or set of documents (score 0), for keyword search."""
+
+    @abstractmethod
+    def embeddings(self, ids: list[str]) -> dict[str, list[float]]:
+        """Stored embeddings by record id."""
+
+    @abstractmethod
     def delete_document(self, document_id: str) -> None: ...
 
     @abstractmethod

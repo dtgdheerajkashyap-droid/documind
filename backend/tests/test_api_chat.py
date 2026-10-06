@@ -6,7 +6,7 @@ from app.core.config import REFUSAL_MESSAGE
 from app.core.container import AppContainer
 from app.main import create_app
 from app.providers.llm.gemini import GeminiProvider
-from tests.conftest import parse_sse
+from tests.conftest import make_pdf, parse_sse
 from tests.fakes import FakeLLM
 
 
@@ -53,6 +53,28 @@ def test_chat_persists_session_history(
     # A follow-up in the same session appends to it.
     client.post("/api/chat", json={"question": "And opened bags?", "session_id": session_id})
     assert client.get(f"/api/sessions/{session_id}").json()["message_count"] == 4
+
+
+def test_chat_answers_about_a_numbered_program(
+    client: TestClient, upload, tmp_path: Path, fake_llm: FakeLLM
+) -> None:
+    code = "X = rand(10, 1); for i = 1:10 Y(i) = X(i) * 2; end disp(Y(1));"
+    upload(
+        make_pdf(
+            tmp_path / "lab_manual.pdf",
+            [f"Program 1: Word embeddings. {code}", f"Program 2: Digit classifier. {code}"],
+        )
+    )
+    fake_llm.responder = lambda prompt, system: "Program 1 builds word embeddings [1]."
+
+    events = parse_sse(
+        client.post("/api/chat", json={"question": "explain the first program"}).text
+    )
+
+    done = events[-1][1]
+    assert done["refused"] is False
+    assert events[-2][1]["citations"][0]["page"] == 1
+    assert "Program 1: Word embeddings." in fake_llm.calls[-1][0]
 
 
 def test_chat_refuses_when_nothing_relevant(client: TestClient, upload, sample_pdf: Path) -> None:

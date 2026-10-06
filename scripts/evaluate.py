@@ -71,6 +71,7 @@ class Result:
     expected: list[tuple[str, int]]
     retrieved: list[tuple[str, int, float]]
     first_hit_rank: int | None = None
+    keyword_match: bool = False
     answer: str | None = None
     refused: bool | None = None
     judge_score: int | None = None
@@ -83,7 +84,11 @@ class Result:
 
     @property
     def best_score(self) -> float:
-        return self.retrieved[0][2] if self.retrieved else 0.0
+        return max((score for *_, score in self.retrieved), default=0.0)
+
+    def gate_refuses(self, threshold: float) -> bool:
+        """Mirrors the chat service: refuse unless a chunk is similar enough or a keyword match."""
+        return self.best_score < threshold and not self.keyword_match
 
 
 def build_settings(args: argparse.Namespace) -> Settings:
@@ -139,10 +144,12 @@ def evaluate_retrieval(container: AppContainer, questions: list[dict], k: int) -
             question=q["question"],
             expected=expected,
             retrieved=[(c.filename, c.page, c.score) for c in chunks],
+            keyword_match=any(c.keyword_match for c in chunks),
         )
         for rank, (filename, page, _) in enumerate(result.retrieved, 1):
             if (filename, page) in expected:
                 result.first_hit_rank = rank
+                break
                 break
         result.extra["reference"] = q.get("reference_answer")
         results.append(result)
@@ -204,8 +211,8 @@ def summarise(results: list[Result], k: int, threshold: float) -> dict[str, Any]
             if answerable
             else 0.0
         ),
-        "gate_correct_refusals": sum(r.best_score < threshold for r in unanswerable),
-        "gate_false_refusals": sum(r.best_score < threshold for r in answerable),
+        "gate_correct_refusals": sum(r.gate_refuses(threshold) for r in unanswerable),
+        "gate_false_refusals": sum(r.gate_refuses(threshold) for r in answerable),
     }
     judged = [r for r in answerable if r.judge_score is not None]
     if judged:
