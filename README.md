@@ -477,8 +477,9 @@ frontend explains this if the API is unreachable).
    `backend/.venv/Scripts/python scripts/deploy_render.py --frontend-url https://<your-app>.vercel.app --wait`.
    This creates the service (or updates its environment and redeploys). The container runs
    `alembic upgrade head` on start, and later pushes to `main` redeploy automatically.
-3. Frontend: from `frontend/`, run
-   `npx vercel deploy --prod --build-env NEXT_PUBLIC_API_URL=<API URL printed by step 2>`.
+3. Frontend: import the GitHub repository in Vercel with **Root Directory** `frontend` and the
+   environment variable `NEXT_PUBLIC_API_URL=<API URL printed by step 2>`. Every push to `main`
+   then deploys both the frontend (Vercel) and the backend (Render).
 
 `scripts/deploy_hf_space.py` deploys the same image to a Hugging Face Docker Space instead; those
 now require a Hugging Face PRO subscription.
