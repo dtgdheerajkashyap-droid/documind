@@ -4,6 +4,9 @@
 
 **Ask questions about your PDFs and get answers grounded in, and cited from, your own documents.**
 
+**Live demo: https://documind-two-wheat.vercel.app** (API: https://documind-api-qy00.onrender.com/docs).
+The free backend sleeps when idle, so the first request can take about a minute.
+
 DocuMind is a full-stack retrieval-augmented generation (RAG) app. You upload PDFs; it extracts,
 chunks, embeds, and indexes them. When you ask a question, it retrieves the most relevant passages
 and has an LLM answer **using only those passages**, with clickable citations (filename, page, exact
@@ -475,7 +478,7 @@ frontend explains this if the API is unreachable).
    This creates the service (or updates its environment and redeploys). The container runs
    `alembic upgrade head` on start, and later pushes to `main` redeploy automatically.
 3. Frontend: from `frontend/`, run
-   `npx vercel deploy --prod --build-env NEXT_PUBLIC_API_URL=https://documind-api.onrender.com`.
+   `npx vercel deploy --prod --build-env NEXT_PUBLIC_API_URL=<API URL printed by step 2>`.
 
 `scripts/deploy_hf_space.py` deploys the same image to a Hugging Face Docker Space instead; those
 now require a Hugging Face PRO subscription.
